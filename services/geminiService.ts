@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { ProjectBlueprint, GeneratedFile, AppSettings } from '../types';
 
-// Updated default API Key provided by user
+// Default Shared Key (often rate limited)
 const defaultApiKey = "AIzaSyC88LY4XAu5KBHLlh5rUGSPNnmDVb7P_nk";
 
 const fileSchema: Schema = {
@@ -57,35 +57,49 @@ const cleanAndParseJson = (text: string) => {
     }
 };
 
+const handleGeminiError = (error: any) => {
+    console.error("Gemini API Error:", error);
+    const msg = error?.message || error?.toString() || "Unknown error";
+    
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota")) {
+        throw new Error("System quota exceeded. Please add your own free Google API Key in Settings > AI Config.");
+    }
+    throw new Error(`AI Error: ${msg}`);
+};
+
 // --- OpenRouter Helper ---
 const callOpenRouter = async (apiKey: string, model: string, systemPrompt: string, userPrompt: string): Promise<any> => {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://shahid-ai.app", // Optional, for OpenRouter rankings
-            "X-Title": "Shahid_AI Code Architect",
-        },
-        body: JSON.stringify({
-            model: model,
-            messages: [
-                { role: "system", content: systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON." },
-                { role: "user", content: userPrompt }
-            ],
-        })
-    });
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://shahid-ai.app",
+                "X-Title": "Shahid_AI Code Architect",
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    { role: "system", content: systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON." },
+                    { role: "user", content: userPrompt }
+                ],
+            })
+        });
 
-    if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`OpenRouter API Error: ${response.status} - ${err}`);
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`OpenRouter API Error: ${response.status} - ${err}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        
+        if (!content) throw new Error("No content received from OpenRouter.");
+        return cleanAndParseJson(content);
+    } catch (e) {
+        throw e;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    if (!content) throw new Error("No content received from OpenRouter.");
-    return cleanAndParseJson(content);
 };
 
 // --- Main Functions ---
@@ -144,11 +158,12 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
           files: data.files,
       };
   } else {
-      // Use Default Google GenAI
-      if (!defaultApiKey) throw new Error("Default API Key is missing.");
+      // Use Google GenAI (User key preferred, fallback to default)
+      const apiKey = settings.googleApiKey || defaultApiKey;
+      if (!apiKey) throw new Error("No API Key available.");
       
       try {
-        const ai = new GoogleGenAI({ apiKey: defaultApiKey });
+        const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
             model: 'gemini-2.0-flash',
             contents: prompt,
@@ -170,8 +185,8 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
             files: data.files,
         };
       } catch (error) {
-        console.error("Gemini API Error:", error);
-        throw error;
+        handleGeminiError(error);
+        throw error; // Re-throw for UI to catch
       }
   }
 };
@@ -222,11 +237,12 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
             files: data.files
         };
     } else {
-        // Default Google GenAI
-        if (!defaultApiKey) throw new Error("Default API Key is missing.");
+         // Use Google GenAI (User key preferred, fallback to default)
+         const apiKey = settings.googleApiKey || defaultApiKey;
+         if (!apiKey) throw new Error("No API Key available.");
         
         try {
-            const ai = new GoogleGenAI({ apiKey: defaultApiKey });
+            const ai = new GoogleGenAI({ apiKey });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.0-flash', 
                 contents: prompt,
@@ -249,7 +265,7 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
             };
     
         } catch (error) {
-            console.error("Enhancement Error:", error);
+            handleGeminiError(error);
             throw error;
         }
     }
