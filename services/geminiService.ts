@@ -73,8 +73,6 @@ const callOpenRouter = async (apiKey: string, model: string, systemPrompt: strin
                 { role: "system", content: systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON." },
                 { role: "user", content: userPrompt }
             ],
-            // Some models support response_format: { type: "json_object" }, but not all. 
-            // We rely on the prompt to enforce JSON.
         })
     });
 
@@ -152,7 +150,7 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
       try {
         const ai = new GoogleGenAI({ apiKey: defaultApiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.0-flash',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
@@ -230,7 +228,7 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
         try {
             const ai = new GoogleGenAI({ apiKey: defaultApiKey });
             const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview', 
+                model: 'gemini-2.0-flash', 
                 contents: prompt,
                 config: {
                     systemInstruction: systemInstruction,
