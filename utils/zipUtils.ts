@@ -33,19 +33,36 @@ export const readProjectZip = async (file: File): Promise<{ files: GeneratedFile
         relativePath.includes('.git') || 
         relativePath.includes('dist') || 
         relativePath.includes('build') ||
+        relativePath.includes('.next') ||
         relativePath.includes('__pycache__') ||
         relativePath.includes('.DS_Store')) continue;
     
     // Check extension for text files
-    const validExtensions = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.txt', '.cpp', '.c', '.h', '.hpp', '.ino', '.ini', '.java', '.dart', '.go', '.rs', '.php', '.vue', '.svelte'];
+    const validExtensions = [
+        '.js', '.jsx', '.ts', '.tsx', 
+        '.html', '.css', '.scss', '.sass', '.less',
+        '.json', '.xml', '.yaml', '.yml', '.toml',
+        '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift', '.php', 
+        '.c', '.cpp', '.h', '.hpp', '.ino', '.cs',
+        '.md', '.txt', '.sh', '.bat',
+        '.vue', '.svelte', '.astro',
+        '.ini', '.env.example', '.gitignore'
+    ];
+    
     const ext = '.' + relativePath.split('.').pop()?.toLowerCase();
     
-    if (!validExtensions.includes(ext) && !relativePath.endsWith('Makefile') && !relativePath.endsWith('Dockerfile') && !relativePath.endsWith('.env.example')) {
+    const isExactMatch = validExtensions.includes(ext);
+    const isSpecialFile = relativePath.endsWith('Makefile') || relativePath.endsWith('Dockerfile') || relativePath.endsWith('Jenkinsfile');
+
+    if (!isExactMatch && !isSpecialFile) {
         continue;
     }
 
     try {
       const content = await entry.async('string');
+      // Skip empty files or files that are likely binary but slipped through
+      if (!content || content.includes('\0')) continue;
+
       files.push({
         path: relativePath,
         content: content,
@@ -63,10 +80,13 @@ const getLanguageFromExt = (ext: string): string => {
     if (ext === '.ts' || ext === '.tsx') return 'typescript';
     if (ext === '.js' || ext === '.jsx') return 'javascript';
     if (ext === '.py') return 'python';
-    if (ext === '.css') return 'css';
+    if (['.css', '.scss', '.sass', '.less'].includes(ext)) return 'css';
     if (ext === '.json') return 'json';
     if (ext === '.html') return 'html';
-    if (['.cpp', '.c', '.h', '.hpp', '.ino'].includes(ext)) return 'cpp';
-    if (ext === '.ini') return 'ini';
+    if (['.cpp', '.c', '.h', '.hpp', '.ino', '.cs', '.java'].includes(ext)) return 'cpp';
+    if (['.yaml', '.yml', '.toml', '.ini'].includes(ext)) return 'ini';
+    if (ext === '.xml') return 'xml';
+    if (ext === '.md') return 'markdown';
+    if (ext === '.sh') return 'bash';
     return 'plaintext';
 };
