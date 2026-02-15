@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GeneratedFile } from '../types';
+import { GeneratedFile, AppSettings } from '../types';
 import { Icons } from './Icons';
 
 // Declare global Prism object
@@ -8,18 +8,20 @@ declare const Prism: any;
 interface CodeCardProps {
   file: GeneratedFile;
   onCopy: (text: string) => void;
+  settings: AppSettings;
 }
 
-export const CodeCard: React.FC<CodeCardProps> = ({ file, onCopy }) => {
+export const CodeCard: React.FC<CodeCardProps> = ({ file, onCopy, settings }) => {
   const [copied, setCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     // Trigger syntax highlighting when content changes or view changes
-    if (typeof Prism !== 'undefined') {
+    // Only if syntaxHighlight is enabled
+    if (typeof Prism !== 'undefined' && settings.syntaxHighlight) {
       Prism.highlightAll();
     }
-  }, [file.content, isFullscreen]);
+  }, [file.content, isFullscreen, settings.syntaxHighlight]);
 
   const handleCopy = () => {
     onCopy(file.content);
@@ -28,6 +30,8 @@ export const CodeCard: React.FC<CodeCardProps> = ({ file, onCopy }) => {
   };
 
   const getLanguageClass = (filename: string, lang: string) => {
+    if (!settings.syntaxHighlight) return 'language-none';
+
     const ext = filename.split('.').pop()?.toLowerCase();
     
     if (lang === 'typescript' || ext === 'ts' || ext === 'tsx') return 'language-tsx';
@@ -40,8 +44,15 @@ export const CodeCard: React.FC<CodeCardProps> = ({ file, onCopy }) => {
     return 'language-javascript'; // Default
   };
 
+  const codeStyle = {
+    fontSize: `${settings.editorFontSize}px`,
+  };
+
   const codeBlock = (
-    <pre className={`text-sm font-mono leading-relaxed bg-[#0e0e0e] text-gray-300 p-5 overflow-x-auto ${isFullscreen ? 'h-full' : 'max-h-[400px]'}`}>
+    <pre 
+        className={`font-mono leading-relaxed bg-[#0e0e0e] text-gray-300 p-5 overflow-x-auto ${isFullscreen ? 'h-full' : 'max-h-[400px]'} ${settings.wordWrap ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}
+        style={codeStyle}
+    >
       <code className={getLanguageClass(file.path, file.language)}>{file.content}</code>
     </pre>
   );

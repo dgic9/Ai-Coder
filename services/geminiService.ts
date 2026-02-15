@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { ProjectBlueprint, GeneratedFile } from '../types';
+import { ProjectBlueprint, GeneratedFile, AppSettings } from '../types';
 
-const apiKey = process.env.API_KEY;
+// Updated default API Key provided by user
+const defaultApiKey = "AIzaSyC88LY4XAu5KBHLlh5rUGSPNnmDVb7P_nk";
 
 const fileSchema: Schema = {
   type: Type.OBJECT,
@@ -56,13 +57,42 @@ const cleanAndParseJson = (text: string) => {
     }
 };
 
-export const generateProjectBlueprint = async (projectName: string, stackId: string): Promise<ProjectBlueprint> => {
-  if (!apiKey) {
-    throw new Error("API Key is missing. Please check your environment configuration.");
-  }
+// --- OpenRouter Helper ---
+const callOpenRouter = async (apiKey: string, model: string, systemPrompt: string, userPrompt: string): Promise<any> => {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://shahid-ai.app", // Optional, for OpenRouter rankings
+            "X-Title": "Shahid_AI Code Architect",
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: [
+                { role: "system", content: systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON." },
+                { role: "user", content: userPrompt }
+            ],
+            // Some models support response_format: { type: "json_object" }, but not all. 
+            // We rely on the prompt to enforce JSON.
+        })
+    });
 
-  const ai = new GoogleGenAI({ apiKey });
+    if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`OpenRouter API Error: ${response.status} - ${err}`);
+    }
 
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) throw new Error("No content received from OpenRouter.");
+    return cleanAndParseJson(content);
+};
+
+// --- Main Functions ---
+
+export const generateProjectBlueprint = async (projectName: string, stackId: string, settings: AppSettings): Promise<ProjectBlueprint> => {
   const techStackInstruction = stackPrompts[stackId] || stackPrompts['react-node'];
 
   const systemInstruction = `You are a world-class senior software architect. 
@@ -80,7 +110,15 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
   2. A complete visual folder structure tree.
   3. The actual code content for the files.
   
-  Return strictly JSON data adhering to the schema.`;
+  OUTPUT FORMAT:
+  You must return a single valid JSON object with the following structure:
+  {
+    "description": "string",
+    "structure": "string",
+    "files": [
+      { "path": "string", "content": "string", "language": "string" }
+    ]
+  }`;
 
   const prompt = `Act as a senior developer. For the project named "${projectName}", provide the complete folder structure and EXTENSIVE, DETAILED code for the application.
   
@@ -92,46 +130,56 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
   - Ensure styling (Tailwind/CSS) is fully implemented in the components.
   - If it is an Embedded/ESP32 project: Provide wiring details in comments, handle Wi-Fi connection securely, and structure the code with clear setup() and loop() functions.
   
-  Generate a high-quality, comprehensive blueprint.`;
+  Generate a high-quality, comprehensive blueprint in JSON format.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: blueprintSchema,
-        // Removed explicit thinkingConfig to rely on defaults and improve stability
-      },
-    });
+  // --- Logic Branching ---
+  if (settings.useCustomApi) {
+      if (!settings.openRouterApiKey) throw new Error("OpenRouter API Key is missing in settings.");
+      const model = settings.customModelId || "openai/gpt-3.5-turbo";
+      
+      const data = await callOpenRouter(settings.openRouterApiKey, model, systemInstruction, prompt);
+      
+      return {
+          projectName,
+          description: data.description,
+          structure: data.structure,
+          files: data.files,
+      };
+  } else {
+      // Use Default Google GenAI
+      if (!defaultApiKey) throw new Error("Default API Key is missing.");
+      
+      try {
+        const ai = new GoogleGenAI({ apiKey: defaultApiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: blueprintSchema,
+            },
+        });
 
-    const text = response.text;
-    if (!text) {
-      throw new Error("No response generated from Gemini.");
-    }
+        const text = response.text;
+        if (!text) throw new Error("No response generated from Gemini.");
+        const data = cleanAndParseJson(text);
 
-    const data = cleanAndParseJson(text);
-
-    return {
-      projectName,
-      description: data.description,
-      structure: data.structure,
-      files: data.files,
-    };
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw error;
+        return {
+            projectName,
+            description: data.description,
+            structure: data.structure,
+            files: data.files,
+        };
+      } catch (error) {
+        console.error("Gemini API Error:", error);
+        throw error;
+      }
   }
 };
 
-export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructions: string, projectName: string): Promise<ProjectBlueprint> => {
-    if (!apiKey) {
-        throw new Error("API Key is missing.");
-    }
+export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructions: string, projectName: string, settings: AppSettings): Promise<ProjectBlueprint> => {
     
-    const ai = new GoogleGenAI({ apiKey });
-
     // Prepare context from files
     const fileContext = files.map(f => `### File: ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``).join('\n\n');
     
@@ -142,8 +190,16 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
     1. Return the FULL project structure, including unchanged files (unless they are irrelevant).
     2. Apply the user's specific instructions for enhancement.
     3. If no specific instructions are given, apply general best practices: clean code, better comments, improved error handling, and modern patterns.
-    4. Ensure the returned JSON adheres to the schema.
-    `;
+    
+    OUTPUT FORMAT:
+    You must return a single valid JSON object with the following structure:
+    {
+      "description": "string",
+      "structure": "string",
+      "files": [
+        { "path": "string", "content": "string", "language": "string" }
+      ]
+    }`;
 
     const prompt = `I have an existing project named "${projectName}".
     
@@ -152,34 +208,51 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
     Current Project Files:
     ${fileContext}
     
-    Please return the enhanced project blueprint.`;
+    Please return the enhanced project blueprint in JSON.`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview', 
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: blueprintSchema,
-                // Removed explicit thinkingConfig to rely on defaults
-            },
-        });
+    // --- Logic Branching ---
+    if (settings.useCustomApi) {
+        if (!settings.openRouterApiKey) throw new Error("OpenRouter API Key is missing in settings.");
+        const model = settings.customModelId || "openai/gpt-3.5-turbo";
 
-        const text = response.text;
-        if (!text) throw new Error("No response from Gemini.");
-        
-        const data = cleanAndParseJson(text);
-        
+        const data = await callOpenRouter(settings.openRouterApiKey, model, systemInstruction, prompt);
+
         return {
             projectName,
             description: data.description,
             structure: data.structure,
             files: data.files
         };
-
-    } catch (error) {
-        console.error("Enhancement Error:", error);
-        throw error;
+    } else {
+        // Default Google GenAI
+        if (!defaultApiKey) throw new Error("Default API Key is missing.");
+        
+        try {
+            const ai = new GoogleGenAI({ apiKey: defaultApiKey });
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview', 
+                contents: prompt,
+                config: {
+                    systemInstruction: systemInstruction,
+                    responseMimeType: "application/json",
+                    responseSchema: blueprintSchema,
+                },
+            });
+    
+            const text = response.text;
+            if (!text) throw new Error("No response from Gemini.");
+            const data = cleanAndParseJson(text);
+            
+            return {
+                projectName,
+                description: data.description,
+                structure: data.structure,
+                files: data.files
+            };
+    
+        } catch (error) {
+            console.error("Enhancement Error:", error);
+            throw error;
+        }
     }
 };

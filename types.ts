@@ -1,3 +1,4 @@
+
 export interface GeneratedFile {
   path: string;
   content: string;
@@ -22,4 +23,16 @@ export interface HistoryItem {
   timestamp: number;
   projectName: string;
   blueprint: ProjectBlueprint;
+}
+
+export interface AppSettings {
+  editorFontSize: number;
+  wordWrap: boolean;
+  syntaxHighlight: boolean;
+  autoSave: boolean;
+  showHidden: boolean;
+  // Custom API Config
+  useCustomApi: boolean;
+  openRouterApiKey: string;
+  customModelId: string;
 }

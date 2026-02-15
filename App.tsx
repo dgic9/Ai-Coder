@@ -5,7 +5,19 @@ import { CodeCard } from './components/CodeCard';
 import { Toast } from './components/Toast';
 import { generateProjectBlueprint, enhanceProjectBlueprint } from './services/geminiService';
 import { downloadProjectZip } from './utils/zipUtils';
-import { ProjectBlueprint, AppView, HistoryItem, GeneratedFile } from './types';
+import { ProjectBlueprint, AppView, HistoryItem, GeneratedFile, AppSettings } from './types';
+
+// Initial Settings Default
+const DEFAULT_SETTINGS: AppSettings = {
+  editorFontSize: 14,
+  wordWrap: false,
+  syntaxHighlight: true,
+  autoSave: true,
+  showHidden: false,
+  useCustomApi: false,
+  openRouterApiKey: '',
+  customModelId: 'openrouter/free'
+};
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.HOME);
@@ -14,8 +26,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
+  
+  // Settings State
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  // Load history from local storage on mount
+  // Load history & settings on mount
   useEffect(() => {
     const savedHistory = localStorage.getItem('shahid_ai_history');
     if (savedHistory) {
@@ -25,12 +40,28 @@ const App: React.FC = () => {
             console.error("Failed to parse history", e);
         }
     }
+
+    const savedSettings = localStorage.getItem('shahid_ai_settings');
+    if (savedSettings) {
+      try {
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
+      } catch (e) {
+        console.error("Failed to parse settings", e);
+      }
+    }
   }, []);
 
-  // Save history when it changes
+  // Save history when it changes (if Auto Save is on)
   useEffect(() => {
-    localStorage.setItem('shahid_ai_history', JSON.stringify(history));
-  }, [history]);
+    if (settings.autoSave) {
+      localStorage.setItem('shahid_ai_history', JSON.stringify(history));
+    }
+  }, [history, settings.autoSave]);
+
+  // Save settings when they change
+  useEffect(() => {
+    localStorage.setItem('shahid_ai_settings', JSON.stringify(settings));
+  }, [settings]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       setToast({ message, type });
@@ -46,7 +77,7 @@ const App: React.FC = () => {
     setError(null);
     setBlueprint(null);
     try {
-      const result = await generateProjectBlueprint(projectName, stackId);
+      const result = await generateProjectBlueprint(projectName, stackId, settings);
       handleSuccess(result, 'Blueprint generated successfully');
     } catch (err) {
       handleError(err);
@@ -60,7 +91,7 @@ const App: React.FC = () => {
       setError(null);
       setBlueprint(null);
       try {
-          const result = await enhanceProjectBlueprint(files, instructions, projectName);
+          const result = await enhanceProjectBlueprint(files, instructions, projectName, settings);
           handleSuccess(result, 'Project enhanced successfully');
       } catch (err) {
           handleError(err);
@@ -98,6 +129,10 @@ const App: React.FC = () => {
       e.stopPropagation();
       setHistory(prev => prev.filter(item => item.id !== id));
       showToast('History item deleted', 'info');
+  };
+
+  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
   };
 
   const renderContent = () => {
@@ -157,21 +192,143 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-bold mb-6 text-md-primary">Settings</h2>
                 
                 <div className="space-y-6">
+                    {/* AI Configuration Section */}
                     <div className="bg-md-surfaceVariant p-6 rounded-2xl border border-gray-700">
-                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                            <Icons.Sparkles className="text-md-secondary" size={20} />
-                            <span>Model Configuration</span>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-400">
+                            AI Config (Server-Side Storage)
                         </h3>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center p-3 bg-[#1e1e1e] rounded-lg">
-                                <span className="text-gray-300">Model</span>
-                                <span className="text-md-primary font-mono text-sm">Gemini 3 Flash</span>
+                        
+                        {/* Toggle Custom API */}
+                         <div className="flex justify-between items-center mb-6 border-b border-gray-700/50 pb-4">
+                            <div>
+                                <span className="font-medium text-gray-200 block">Use Custom OpenRouter API</span>
+                                <span className="text-xs text-gray-500">Override default Gemini model</span>
                             </div>
-                            <div className="flex justify-between items-center p-3 bg-[#1e1e1e] rounded-lg">
-                                <span className="text-gray-300">Response Format</span>
-                                <span className="text-gray-400 text-sm">JSON Schema Enforced</span>
+                            <button 
+                                onClick={() => updateSetting('useCustomApi', !settings.useCustomApi)}
+                                className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.useCustomApi ? 'bg-md-primary' : 'bg-gray-600'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.useCustomApi ? 'translate-x-7' : 'translate-x-1'}`} />
+                            </button>
+                         </div>
+
+                        {settings.useCustomApi ? (
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">OpenRouter API Key</label>
+                                    <div className="flex items-center bg-[#121212] border border-gray-600 rounded-lg overflow-hidden focus-within:border-md-primary transition-colors">
+                                        <input 
+                                            type="password" 
+                                            value={settings.openRouterApiKey}
+                                            onChange={(e) => updateSetting('openRouterApiKey', e.target.value)}
+                                            placeholder="sk-or-..."
+                                            className="w-full bg-transparent p-3 text-gray-300 font-mono text-sm focus:outline-none placeholder-gray-700"
+                                        />
+                                        <div className="pr-3 text-gray-500">
+                                            <Icons.Zap size={16} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
+                                    <input 
+                                        type="text" 
+                                        value={settings.customModelId}
+                                        onChange={(e) => updateSetting('customModelId', e.target.value)}
+                                        placeholder="e.g. openai/gpt-4o, anthropic/claude-3-opus"
+                                        className="w-full bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm focus:outline-none focus:border-md-primary transition-colors placeholder-gray-700"
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-1 ml-1">Check OpenRouter for valid model IDs.</p>
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="space-y-4 animate-fade-in-up opacity-80">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
+                                    <div className="bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm opacity-60 cursor-not-allowed">
+                                        gemini-3-flash-preview
+                                    </div>
+                                </div>
+                                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                                    <p className="text-xs text-blue-300 flex items-center gap-2">
+                                        <Icons.Info size={14} />
+                                        <span>Using default embedded API Key.</span>
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Editor Settings Section */}
+                    <div className="bg-md-surfaceVariant p-6 rounded-2xl border border-gray-700 space-y-6">
+                         
+                         {/* Slider: Editor Size */}
+                         <div>
+                            <div className="flex justify-between mb-2">
+                                <span className="font-medium text-white">Editor Size</span>
+                                <span className="text-md-primary font-mono text-sm">{settings.editorFontSize} sp</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="10" 
+                                max="24" 
+                                step="1"
+                                value={settings.editorFontSize}
+                                onChange={(e) => updateSetting('editorFontSize', parseInt(e.target.value))}
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-md-primary hover:accent-md-primaryVariant"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>|</span><span>|</span><span>|</span><span>|</span><span>|</span>
+                            </div>
+                         </div>
+
+                         {/* Toggles */}
+                         <div className="space-y-1">
+                             {/* Word Wrap */}
+                             <div className="flex justify-between items-center py-3 border-b border-gray-700/50">
+                                <span className="font-medium text-gray-200">Word Wrap</span>
+                                <button 
+                                    onClick={() => updateSetting('wordWrap', !settings.wordWrap)}
+                                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.wordWrap ? 'bg-md-primary' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.wordWrap ? 'translate-x-7' : 'translate-x-1'}`} />
+                                </button>
+                             </div>
+
+                             {/* Show Hidden */}
+                             <div className="flex justify-between items-center py-3 border-b border-gray-700/50">
+                                <span className="font-medium text-gray-200">Show Hidden</span>
+                                <button 
+                                    onClick={() => updateSetting('showHidden', !settings.showHidden)}
+                                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.showHidden ? 'bg-md-primary' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.showHidden ? 'translate-x-7' : 'translate-x-1'}`} />
+                                </button>
+                             </div>
+
+                             {/* Syntax Highlight */}
+                             <div className="flex justify-between items-center py-3 border-b border-gray-700/50">
+                                <span className="font-medium text-gray-200">Syntax Highlight</span>
+                                <button 
+                                    onClick={() => updateSetting('syntaxHighlight', !settings.syntaxHighlight)}
+                                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.syntaxHighlight ? 'bg-blue-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.syntaxHighlight ? 'translate-x-7' : 'translate-x-1'}`} />
+                                </button>
+                             </div>
+
+                             {/* Auto Save */}
+                             <div className="flex justify-between items-center py-3">
+                                <span className="font-medium text-gray-200">Auto Save</span>
+                                <button 
+                                    onClick={() => updateSetting('autoSave', !settings.autoSave)}
+                                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.autoSave ? 'bg-blue-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.autoSave ? 'translate-x-7' : 'translate-x-1'}`} />
+                                </button>
+                             </div>
+                         </div>
                     </div>
 
                     <div className="bg-md-surfaceVariant p-6 rounded-2xl border border-gray-700">
@@ -181,7 +338,7 @@ const App: React.FC = () => {
                         </h3>
                         <p className="text-gray-400 text-sm leading-relaxed">
                             Shahid_AI Code Architect generates production-ready boilerplates using Google's Gemini API. 
-                            It strictly follows best practices for folder structure and configuration.
+                            Settings are saved locally to your device.
                         </p>
                     </div>
                 </div>
@@ -275,7 +432,7 @@ const App: React.FC = () => {
                 
                 <div className="grid grid-cols-1 gap-6">
                     {blueprint.files.map((file, idx) => (
-                        <CodeCard key={idx} file={file} onCopy={handleCopy} />
+                        <CodeCard key={idx} file={file} onCopy={handleCopy} settings={settings} />
                     ))}
                 </div>
             </div>
@@ -300,10 +457,17 @@ const App: React.FC = () => {
                 <span className="font-bold text-xl tracking-tight hidden md:block">Shahid_AI</span>
             </div>
             <div className="flex items-center gap-2">
-                <div className="px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                    Gemini Pro Active
-                </div>
+                {settings.useCustomApi ? (
+                    <div className="px-3 py-1 rounded-full bg-purple-900/30 border border-purple-500/50 text-xs font-mono text-purple-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                        Custom API
+                    </div>
+                ) : (
+                    <div className="px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        Gemini Pro
+                    </div>
+                )}
             </div>
         </div>
       </header>
