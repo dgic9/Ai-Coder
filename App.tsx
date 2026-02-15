@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   syntaxHighlight: true,
   autoSave: true,
   showHidden: false,
+  googleApiKey: '',
   useCustomApi: false,
   openRouterApiKey: '',
   customModelId: 'openrouter/free'
@@ -201,8 +202,8 @@ const App: React.FC = () => {
                         {/* Toggle Custom API */}
                          <div className="flex justify-between items-center mb-6 border-b border-gray-700/50 pb-4">
                             <div>
-                                <span className="font-medium text-gray-200 block">Use Custom OpenRouter API</span>
-                                <span className="text-xs text-gray-500">Override default Gemini model</span>
+                                <span className="font-medium text-gray-200 block">Use OpenRouter API</span>
+                                <span className="text-xs text-gray-500">Enable to use other models (GPT, Claude)</span>
                             </div>
                             <button 
                                 onClick={() => updateSetting('useCustomApi', !settings.useCustomApi)}
@@ -243,18 +244,33 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="space-y-4 animate-fade-in-up opacity-80">
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
-                                    <div className="bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm opacity-60 cursor-not-allowed">
-                                        gemini-2.0-flash
-                                    </div>
-                                </div>
-                                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-                                    <p className="text-xs text-blue-300 flex items-center gap-2">
-                                        <Icons.Info size={14} />
-                                        <span>Using default embedded API Key.</span>
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-4">
+                                    <p className="text-xs text-blue-300 flex items-start gap-2">
+                                        <Icons.Info size={14} className="mt-0.5" />
+                                        <span>
+                                            Using Model: <strong>gemini-2.0-flash</strong>. 
+                                            The shared system key may hit rate limits. 
+                                            Add your own free key below for best results.
+                                        </span>
                                     </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-md-primary mb-1 ml-1 font-medium">Google Gemini API Key (Recommended)</label>
+                                    <div className="flex items-center bg-[#121212] border border-gray-600 rounded-lg overflow-hidden focus-within:border-md-primary transition-colors">
+                                        <input 
+                                            type="password" 
+                                            value={settings.googleApiKey || ''}
+                                            onChange={(e) => updateSetting('googleApiKey', e.target.value)}
+                                            placeholder="AIzaSy... (Leave empty to use shared key)"
+                                            className="w-full bg-transparent p-3 text-gray-300 font-mono text-sm focus:outline-none placeholder-gray-700"
+                                        />
+                                        <div className="pr-3 text-gray-500">
+                                            <Icons.Check size={16} className={settings.googleApiKey ? "text-green-500" : "opacity-0"} />
+                                        </div>
+                                    </div>
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-gray-500 hover:text-white mt-1 ml-1 underline decoration-gray-700">Get a free key here</a>
                                 </div>
                             </div>
                         )}
@@ -464,7 +480,7 @@ const App: React.FC = () => {
                     </div>
                 ) : (
                     <div className="px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <span className={`w-2 h-2 rounded-full animate-pulse ${settings.googleApiKey ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                         Gemini 2.0 Flash
                     </div>
                 )}

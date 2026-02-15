@@ -32,7 +32,8 @@ export interface AppSettings {
   autoSave: boolean;
   showHidden: boolean;
   // Custom API Config
-  useCustomApi: boolean;
+  googleApiKey: string; // User's personal Gemini Key
+  useCustomApi: boolean; // Toggle for OpenRouter
   openRouterApiKey: string;
   customModelId: string;
 }
