@@ -37,6 +37,25 @@ const stackPrompts: Record<string, string> = {
   'vanilla': 'Use vanilla HTML5, CSS3, and modern JavaScript (ES6+).'
 };
 
+const cleanAndParseJson = (text: string) => {
+    if (!text) throw new Error("Empty response from AI");
+    
+    let cleaned = text.trim();
+    // Remove markdown code blocks if present
+    if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '');
+    } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```/, '').replace(/```$/, '');
+    }
+    
+    try {
+        return JSON.parse(cleaned);
+    } catch (e) {
+        console.error("Failed to parse JSON:", cleaned);
+        throw new Error("AI generated invalid JSON. Please try again.");
+    }
+};
+
 export const generateProjectBlueprint = async (projectName: string, stackId: string): Promise<ProjectBlueprint> => {
   if (!apiKey) {
     throw new Error("API Key is missing. Please check your environment configuration.");
@@ -83,7 +102,7 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
-        thinkingConfig: { thinkingBudget: 4096 }
+        // Removed explicit thinkingConfig to rely on defaults and improve stability
       },
     });
 
@@ -92,7 +111,7 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
       throw new Error("No response generated from Gemini.");
     }
 
-    const data = JSON.parse(text);
+    const data = cleanAndParseJson(text);
 
     return {
       projectName,
@@ -114,7 +133,6 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
     const ai = new GoogleGenAI({ apiKey });
 
     // Prepare context from files
-    // Limit to reasonable size to prevent token overflow, though Gemini 2.0 has a large context.
     const fileContext = files.map(f => `### File: ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``).join('\n\n');
     
     const systemInstruction = `You are an expert Code Reviewer and Architect.
@@ -138,20 +156,20 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-3-flash-preview', 
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema: blueprintSchema,
-                thinkingConfig: { thinkingBudget: 4096 }
+                // Removed explicit thinkingConfig to rely on defaults
             },
         });
 
         const text = response.text;
         if (!text) throw new Error("No response from Gemini.");
         
-        const data = JSON.parse(text);
+        const data = cleanAndParseJson(text);
         
         return {
             projectName,
