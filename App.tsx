@@ -247,7 +247,7 @@ const App: React.FC = () => {
                                 <div>
                                     <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
                                     <div className="bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm opacity-60 cursor-not-allowed">
-                                        gemini-3-flash-preview
+                                        gemini-2.0-flash
                                     </div>
                                 </div>
                                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
@@ -465,7 +465,7 @@ const App: React.FC = () => {
                 ) : (
                     <div className="px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        Gemini Pro
+                        Gemini 2.0 Flash
                     </div>
                 )}
             </div>
