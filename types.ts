@@ -25,15 +25,29 @@ export interface HistoryItem {
   blueprint: ProjectBlueprint;
 }
 
+export type ApiProvider = 'google' | 'openrouter' | 'github';
+
 export interface AppSettings {
   editorFontSize: number;
   wordWrap: boolean;
   syntaxHighlight: boolean;
   autoSave: boolean;
   showHidden: boolean;
-  // Custom API Config
+  
+  // Provider Selection
+  activeProvider: ApiProvider;
+
+  // Google
   googleApiKey: string; // User's personal Gemini Key
-  useCustomApi: boolean; // Toggle for OpenRouter
+
+  // OpenRouter
   openRouterApiKey: string;
   customModelId: string;
+
+  // GitHub
+  githubToken: string;
+  githubModelId: string;
+  
+  // Legacy support
+  useCustomApi?: boolean; 
 }

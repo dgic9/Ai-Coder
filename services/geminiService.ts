@@ -62,7 +62,7 @@ const handleGeminiError = (error: any) => {
     const msg = error?.message || error?.toString() || "Unknown error";
     
     if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota")) {
-        throw new Error("System quota exceeded. Please add your own free Google API Key in Settings > AI Config.");
+        throw new Error("System quota exceeded. Please switch to GitHub Models or add your own Google API Key in Settings.");
     }
     throw new Error(`AI Error: ${msg}`);
 };
@@ -96,6 +96,40 @@ const callOpenRouter = async (apiKey: string, model: string, systemPrompt: strin
         const content = data.choices?.[0]?.message?.content;
         
         if (!content) throw new Error("No content received from OpenRouter.");
+        return cleanAndParseJson(content);
+    } catch (e) {
+        throw e;
+    }
+};
+
+// --- GitHub Models Helper ---
+const callGithubAI = async (token: string, model: string, systemPrompt: string, userPrompt: string): Promise<any> => {
+    try {
+        const response = await fetch("https://models.github.ai/inference/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                messages: [
+                    { role: "system", content: systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON." },
+                    { role: "user", content: userPrompt }
+                ],
+                model: model,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`GitHub API Error: ${response.status} - ${err}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+
+        if (!content) throw new Error("No content received from GitHub API.");
         return cleanAndParseJson(content);
     } catch (e) {
         throw e;
@@ -144,8 +178,22 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
   
   Generate a high-quality, comprehensive blueprint in JSON format.`;
 
-  // --- Logic Branching ---
-  if (settings.useCustomApi) {
+  // --- Provider Logic ---
+  
+  if (settings.activeProvider === 'github') {
+      if (!settings.githubToken) throw new Error("GitHub Token is missing in settings.");
+      const model = settings.githubModelId || "gpt-4o";
+      
+      const data = await callGithubAI(settings.githubToken, model, systemInstruction, prompt);
+      
+      return {
+          projectName,
+          description: data.description,
+          structure: data.structure,
+          files: data.files,
+      };
+
+  } else if (settings.activeProvider === 'openrouter') {
       if (!settings.openRouterApiKey) throw new Error("OpenRouter API Key is missing in settings.");
       const model = settings.customModelId || "openai/gpt-3.5-turbo";
       
@@ -157,8 +205,9 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
           structure: data.structure,
           files: data.files,
       };
+
   } else {
-      // Use Google GenAI (User key preferred, fallback to default)
+      // Default: Google GenAI (User key preferred, fallback to default)
       const apiKey = settings.googleApiKey || defaultApiKey;
       if (!apiKey) throw new Error("No API Key available.");
       
@@ -186,7 +235,7 @@ export const generateProjectBlueprint = async (projectName: string, stackId: str
         };
       } catch (error) {
         handleGeminiError(error);
-        throw error; // Re-throw for UI to catch
+        throw error;
       }
   }
 };
@@ -223,8 +272,22 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
     
     Please return the enhanced project blueprint in JSON.`;
 
-    // --- Logic Branching ---
-    if (settings.useCustomApi) {
+    // --- Provider Logic ---
+
+    if (settings.activeProvider === 'github') {
+        if (!settings.githubToken) throw new Error("GitHub Token is missing in settings.");
+        const model = settings.githubModelId || "gpt-4o";
+
+        const data = await callGithubAI(settings.githubToken, model, systemInstruction, prompt);
+
+        return {
+            projectName,
+            description: data.description,
+            structure: data.structure,
+            files: data.files
+        };
+
+    } else if (settings.activeProvider === 'openrouter') {
         if (!settings.openRouterApiKey) throw new Error("OpenRouter API Key is missing in settings.");
         const model = settings.customModelId || "openai/gpt-3.5-turbo";
 
@@ -236,8 +299,9 @@ export const enhanceProjectBlueprint = async (files: GeneratedFile[], instructio
             structure: data.structure,
             files: data.files
         };
+
     } else {
-         // Use Google GenAI (User key preferred, fallback to default)
+         // Default: Google GenAI
          const apiKey = settings.googleApiKey || defaultApiKey;
          if (!apiKey) throw new Error("No API Key available.");
         

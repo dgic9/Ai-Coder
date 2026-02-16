@@ -5,7 +5,7 @@ import { CodeCard } from './components/CodeCard';
 import { Toast } from './components/Toast';
 import { generateProjectBlueprint, enhanceProjectBlueprint } from './services/geminiService';
 import { downloadProjectZip } from './utils/zipUtils';
-import { ProjectBlueprint, AppView, HistoryItem, GeneratedFile, AppSettings } from './types';
+import { ProjectBlueprint, AppView, HistoryItem, GeneratedFile, AppSettings, ApiProvider } from './types';
 
 // Initial Settings Default
 const DEFAULT_SETTINGS: AppSettings = {
@@ -14,10 +14,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   syntaxHighlight: true,
   autoSave: true,
   showHidden: false,
+  
+  activeProvider: 'google',
+  
   googleApiKey: '',
-  useCustomApi: false,
+  
+  useCustomApi: false, // Legacy
   openRouterApiKey: '',
-  customModelId: 'openrouter/free'
+  customModelId: 'openrouter/free',
+
+  githubToken: '',
+  githubModelId: 'gpt-4o'
 };
 
 const App: React.FC = () => {
@@ -45,7 +52,16 @@ const App: React.FC = () => {
     const savedSettings = localStorage.getItem('shahid_ai_settings');
     if (savedSettings) {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
+        const parsed = JSON.parse(savedSettings);
+        
+        // Migration logic for old useCustomApi
+        if (parsed.useCustomApi && !parsed.activeProvider) {
+            parsed.activeProvider = 'openrouter';
+        } else if (!parsed.activeProvider) {
+            parsed.activeProvider = 'google';
+        }
+
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
       } catch (e) {
         console.error("Failed to parse settings", e);
       }
@@ -136,6 +152,20 @@ const App: React.FC = () => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  // Header Content Helper
+  const getActiveProviderLabel = () => {
+      if (settings.activeProvider === 'github') return 'GitHub Models';
+      if (settings.activeProvider === 'openrouter') return 'OpenRouter';
+      return 'Gemini 2.0 Flash';
+  };
+
+  const getActiveProviderColor = () => {
+      if (settings.activeProvider === 'github') return 'bg-purple-500';
+      if (settings.activeProvider === 'openrouter') return 'bg-blue-500';
+      // Google Status
+      return settings.googleApiKey ? 'bg-green-500' : 'bg-yellow-500';
+  };
+
   const renderContent = () => {
     if (currentView === AppView.HISTORY) {
         return (
@@ -196,62 +226,36 @@ const App: React.FC = () => {
                     {/* AI Configuration Section */}
                     <div className="bg-md-surfaceVariant p-6 rounded-2xl border border-gray-700">
                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-400">
-                            AI Config (Server-Side Storage)
+                            AI Provider
                         </h3>
                         
-                        {/* Toggle Custom API */}
-                         <div className="flex justify-between items-center mb-6 border-b border-gray-700/50 pb-4">
-                            <div>
-                                <span className="font-medium text-gray-200 block">Use OpenRouter API</span>
-                                <span className="text-xs text-gray-500">Enable to use other models (GPT, Claude)</span>
-                            </div>
-                            <button 
-                                onClick={() => updateSetting('useCustomApi', !settings.useCustomApi)}
-                                className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${settings.useCustomApi ? 'bg-md-primary' : 'bg-gray-600'}`}
-                            >
-                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-transform duration-200 ${settings.useCustomApi ? 'translate-x-7' : 'translate-x-1'}`} />
-                            </button>
-                         </div>
+                        {/* Provider Selector Tabs */}
+                        <div className="flex bg-[#121212] rounded-lg p-1 mb-6">
+                            {(['google', 'openrouter', 'github'] as ApiProvider[]).map((provider) => (
+                                <button
+                                    key={provider}
+                                    onClick={() => updateSetting('activeProvider', provider)}
+                                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                                        settings.activeProvider === provider 
+                                        ? 'bg-md-primary text-black shadow-lg' 
+                                        : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    {provider === 'google' && 'Google Gemini'}
+                                    {provider === 'openrouter' && 'OpenRouter'}
+                                    {provider === 'github' && 'GitHub Models'}
+                                </button>
+                            ))}
+                        </div>
 
-                        {settings.useCustomApi ? (
-                            <div className="space-y-4 animate-fade-in-up">
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1 ml-1">OpenRouter API Key</label>
-                                    <div className="flex items-center bg-[#121212] border border-gray-600 rounded-lg overflow-hidden focus-within:border-md-primary transition-colors">
-                                        <input 
-                                            type="password" 
-                                            value={settings.openRouterApiKey}
-                                            onChange={(e) => updateSetting('openRouterApiKey', e.target.value)}
-                                            placeholder="sk-or-..."
-                                            className="w-full bg-transparent p-3 text-gray-300 font-mono text-sm focus:outline-none placeholder-gray-700"
-                                        />
-                                        <div className="pr-3 text-gray-500">
-                                            <Icons.Zap size={16} />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
-                                    <input 
-                                        type="text" 
-                                        value={settings.customModelId}
-                                        onChange={(e) => updateSetting('customModelId', e.target.value)}
-                                        placeholder="e.g. openai/gpt-4o, anthropic/claude-3-opus"
-                                        className="w-full bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm focus:outline-none focus:border-md-primary transition-colors placeholder-gray-700"
-                                    />
-                                    <p className="text-[10px] text-gray-500 mt-1 ml-1">Check OpenRouter for valid model IDs.</p>
-                                </div>
-                            </div>
-                        ) : (
+                        {/* Google Settings */}
+                        {settings.activeProvider === 'google' && (
                             <div className="space-y-4 animate-fade-in-up">
                                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-4">
                                     <p className="text-xs text-blue-300 flex items-start gap-2">
                                         <Icons.Info size={14} className="mt-0.5" />
                                         <span>
                                             Using Model: <strong>gemini-2.0-flash</strong>. 
-                                            The shared system key may hit rate limits. 
-                                            Add your own free key below for best results.
                                         </span>
                                     </p>
                                 </div>
@@ -271,6 +275,86 @@ const App: React.FC = () => {
                                         </div>
                                     </div>
                                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-gray-500 hover:text-white mt-1 ml-1 underline decoration-gray-700">Get a free key here</a>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OpenRouter Settings */}
+                        {settings.activeProvider === 'openrouter' && (
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">OpenRouter API Key</label>
+                                    <div className="flex items-center bg-[#121212] border border-gray-600 rounded-lg overflow-hidden focus-within:border-md-primary transition-colors">
+                                        <input 
+                                            type="password" 
+                                            value={settings.openRouterApiKey}
+                                            onChange={(e) => updateSetting('openRouterApiKey', e.target.value)}
+                                            placeholder="sk-or-..."
+                                            className="w-full bg-transparent p-3 text-gray-300 font-mono text-sm focus:outline-none placeholder-gray-700"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
+                                    <input 
+                                        type="text" 
+                                        value={settings.customModelId}
+                                        onChange={(e) => updateSetting('customModelId', e.target.value)}
+                                        placeholder="e.g. openai/gpt-4o, anthropic/claude-3-opus"
+                                        className="w-full bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm focus:outline-none focus:border-md-primary transition-colors placeholder-gray-700"
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-1 ml-1">Check OpenRouter for valid model IDs.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* GitHub Settings */}
+                        {settings.activeProvider === 'github' && (
+                            <div className="space-y-4 animate-fade-in-up">
+                                <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 mb-4">
+                                    <p className="text-xs text-purple-300 flex items-start gap-2">
+                                        <Icons.Info size={14} className="mt-0.5" />
+                                        <span>
+                                            Access Azure AI models via GitHub. Requires a Personal Access Token (PAT).
+                                        </span>
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">GitHub Personal Access Token</label>
+                                    <div className="flex items-center bg-[#121212] border border-gray-600 rounded-lg overflow-hidden focus-within:border-md-primary transition-colors">
+                                        <input 
+                                            type="password" 
+                                            value={settings.githubToken}
+                                            onChange={(e) => updateSetting('githubToken', e.target.value)}
+                                            placeholder="github_pat_..."
+                                            className="w-full bg-transparent p-3 text-gray-300 font-mono text-sm focus:outline-none placeholder-gray-700"
+                                        />
+                                    </div>
+                                    <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-[10px] text-gray-500 hover:text-white mt-1 ml-1 underline decoration-gray-700">Get a token here</a>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1 ml-1">Model ID</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            value={settings.githubModelId}
+                                            onChange={(e) => updateSetting('githubModelId', e.target.value)}
+                                            placeholder="gpt-4o"
+                                            className="w-full bg-[#121212] border border-gray-600 rounded-lg p-3 text-gray-300 font-mono text-sm focus:outline-none focus:border-md-primary transition-colors placeholder-gray-700"
+                                            list="github-models"
+                                        />
+                                        <datalist id="github-models">
+                                            <option value="gpt-4o" />
+                                            <option value="gpt-4o-mini" />
+                                            <option value="Phi-3-medium-4k-instruct" />
+                                            <option value="Mistral-large" />
+                                            <option value="Llama-3-70b-instruct" />
+                                        </datalist>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mt-1 ml-1">Common: gpt-4o, gpt-4o-mini, Phi-3-medium-4k-instruct</p>
                                 </div>
                             </div>
                         )}
@@ -353,7 +437,7 @@ const App: React.FC = () => {
                             <span>About</span>
                         </h3>
                         <p className="text-gray-400 text-sm leading-relaxed">
-                            Shahid_AI Code Architect generates production-ready boilerplates using Google's Gemini API. 
+                            Shahid_AI Code Architect generates production-ready boilerplates using Google's Gemini API, OpenRouter, or GitHub Models. 
                             Settings are saved locally to your device.
                         </p>
                     </div>
@@ -473,17 +557,10 @@ const App: React.FC = () => {
                 <span className="font-bold text-xl tracking-tight hidden md:block">Shahid_AI</span>
             </div>
             <div className="flex items-center gap-2">
-                {settings.useCustomApi ? (
-                    <div className="px-3 py-1 rounded-full bg-purple-900/30 border border-purple-500/50 text-xs font-mono text-purple-300 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
-                        Custom API
-                    </div>
-                ) : (
-                    <div className="px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full animate-pulse ${settings.googleApiKey ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
-                        Gemini 2.0 Flash
-                    </div>
-                )}
+                <div className="px-3 py-1 rounded-full bg-[#1e1e1e] border border-gray-700 text-xs font-mono text-gray-400 flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full animate-pulse ${getActiveProviderColor()}`}></span>
+                    {getActiveProviderLabel()}
+                </div>
             </div>
         </div>
       </header>
